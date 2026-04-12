@@ -214,6 +214,55 @@ check_json() {
     fi
 }
 
+show_help() {
+cat << 'EOF'
+netchecker - simple network health checker (JSON-based)
+
+USAGE:
+    netchecker [OPTIONS]
+
+OPTIONS:
+    -f <file>        Path to JSON config file
+                     (default: ~/.config/netchecker/hosts.json)
+
+    -n <network>     Filter specific network(s)
+                     Can be used multiple times:
+                     -n draga.local -n sosny.local
+
+    -l               List available networks from config
+
+    -h               Show this help message
+
+CONFIG FORMAT:
+    {
+      "networks": [
+        {
+          "network": "example.local",
+          "hosts": [
+            {
+              "name": "Router",
+              "ip": "192.168.1.1",
+              "mode": "critical|noncritical"
+            }
+          ]
+        }
+      ]
+    }
+
+EXAMPLES:
+    netchecker
+    netchecker -f network.json
+    netchecker -n foo.local
+    netchecker -f network.json -n foo.local -n xyz.local
+    netchecker -l
+
+EXIT CODES:
+    0   all networks OK
+    1   at least one failure detected
+EOF
+exit 0
+}
+
 # -------------------------
 # ARG PARSING
 # -------------------------
@@ -221,11 +270,12 @@ FILE="$DEFAULT_CONFIG"
 declare -a NETWORK_FILTERS=()
 LIST_MODE=0
 
-while getopts "f:n:l" opt; do
+while getopts "f:n:l:h" opt; do
     case "$opt" in
         f) FILE="$OPTARG" ;;
         n) NETWORK_FILTERS+=("$OPTARG") ;;
         l) LIST_MODE=1 ;;
+        h) show_help ;;
         *) echo "Usage: $0 [-f file.json] [-n network] [-l]" ; exit 1 ;;
     esac
 done
