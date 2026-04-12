@@ -1,0 +1,271 @@
+#!/usr/bin/env bash
+
+set -u
+
+GREEN=$'\e[32m'
+YELLOW=$'\e[33m'
+RED=$'\e[31m'
+BLUE=$'\e[94m'
+RESET=$'\e[0m'
+
+CHAR_SUCCESS="✓"
+CHAR_WARN="▲"
+CHAR_ERROR="✗"
+CHAR_INFO="ℹ"
+
+PING_OPTS="-c 1 -W 2"
+CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/netchecker"
+DEFAULT_CONFIG="$CONFIG_DIR/hosts.json"
+
+# -------------------------
+# LOGGING
+# -------------------------
+log_row() {
+    printf "%s[%s] %-35s %-18s %-10s %s%s\n" \
+        "$5" "$1" "$2" "$3" "$4" "$6" "$RESET"
+}
+
+ping_success() {
+    log_row "$CHAR_SUCCESS" "$1" "$2" "$3" "$GREEN" "reachable"
+}
+
+ping_error() {
+    log_row "$CHAR_ERROR" "$1" "$2" "-" "$RED" "unreachable"
+}
+
+ping_warning() {
+    log_row "$CHAR_WARN" "$1" "$2" "-" "$YELLOW" "unreachable (non-critical)"
+}
+
+log_info() {
+    printf "${BLUE}[$CHAR_INFO] %s${RESET}\n" "$1"
+}
+
+log_error() {
+    printf "${RED}[$CHAR_ERROR] %s${RESET}\n" "$1"
+}
+
+log_success() {
+    printf "${GREEN}[$CHAR_SUCCESS] %s${RESET}\n" "$1"
+}
+
+log_stat() {
+    local icon="$1"
+    local label="$2"
+    local value="$3"
+    local color="$4"
+
+    printf "${color}[%s] %-35s %d${RESET}\n" "$icon" "$label" "$value"
+}
+
+# -------------------------
+# CHECK
+# -------------------------
+check() {
+    local host="$1"
+    local name="$2"
+    local mode="${3:-}"
+
+    local output latency
+    output=$(ping $PING_OPTS "$host" 2>/dev/null)
+    local status=$?
+
+    if [[ $status -eq 0 ]]; then
+        latency=$(echo "$output" | grep -oP 'time=\K[0-9.]+' | tail -1)
+        latency="${latency:-0} ms"
+
+        ping_success "$name" "$host" "$latency"
+        return 0
+    else
+        if [[ "$mode" == "noncritical" ]]; then
+            ping_warning "$name" "$host"
+        else
+            ping_error "$name" "$host"
+        fi
+        return 1
+    fi
+}
+
+# -------------------------
+# JSON PROCESSING
+# -------------------------
+check_json() {
+    local file="$1"
+    shift
+    local filters=("$@")
+    local FIRST=1
+
+    local TOTAL_FAIL=0
+    declare -A NETWORK_STATUS
+
+    # validation
+    if [[ ! -f "$file" ]]; then
+        log_error "Config file not found: $file"
+        exit 1
+    fi
+
+    if ! jq empty "$file" 2>/dev/null; then
+        log_error "Invalid JSON file: $file"
+        exit 1
+    fi
+
+    if ! jq -e '.networks and (.networks | type == "array")' "$file" > /dev/null; then
+        log_error "Invalid format: missing 'networks' array"
+        exit 1
+    fi
+
+    local FOUND=0
+
+    while IFS= read -r net; do
+        local network FAIL=0 OK=0 WARN_COUNT=0
+
+        network=$(echo "$net" | jq -r '.network // "unknown"')
+
+        # filtering
+        if [[ ${#filters[@]} -gt 0 ]]; then
+            skip=1
+            for f in "${filters[@]}"; do
+                [[ "$network" == "$f" ]] && skip=0
+            done
+            [[ $skip -eq 1 ]] && continue
+        fi
+
+        FOUND=1
+
+        if [[ $FIRST -eq 0 ]]; then
+            echo
+            log_info "------------------------------------------------------------------------"
+        fi
+        FIRST=0
+        log_info "Checking ${network} network"
+        log_info "HOSTNAME                            IP                 LATENCY    STATUS"
+
+        while IFS= read -r row; do
+            local name ip mode
+
+            name=$(echo "$row" | jq -r '.name')
+            ip=$(echo "$row" | jq -r '.ip')
+            mode=$(echo "$row" | jq -r '.mode')
+
+            [[ "$ip" == "null" ]] && continue
+            [[ "$name" == "null" || -z "$name" ]] && name="$ip"
+
+            if [[ "$mode" == "noncritical" ]]; then
+                if check "$ip" "$name" "noncritical"; then
+                    ((OK++))
+                else
+                    ((WARN_COUNT++))
+                fi
+            else
+                if check "$ip" "$name"; then
+                    ((OK++))
+                else
+                    ((FAIL++))
+                fi
+            fi
+
+        done < <(echo "$net" | jq -c '.hosts[]')
+
+        log_info "SUMMARY: $network"
+        log_stat "$CHAR_SUCCESS" "reachable"           "$OK"         "$GREEN"
+        log_stat "$CHAR_WARN"    "failed non-critical" "$WARN_COUNT" "$YELLOW"
+        log_stat "$CHAR_ERROR"   "failed"              "$FAIL"       "$RED"
+
+        if [[ $FAIL -eq 0 ]]; then
+            NETWORK_STATUS["$network"]="OK"
+        else
+            NETWORK_STATUS["$network"]="FAIL"
+            ((TOTAL_FAIL++))
+        fi
+
+    done < <(jq -c '.networks[]' "$file")
+
+    # no match
+    if [[ ${#filters[@]} -gt 0 && $FOUND -eq 0 ]]; then
+        echo
+        log_error "No matching networks found for filter(s): ${filters[*]}"
+        exit 1
+    fi
+
+    # -------------------------
+    # GLOBAL SUMMARY
+    # -------------------------
+    echo
+    log_info "------------------------------------------------------------------------"
+    log_info "SUMMARY NETWORK STATUS"
+
+    for net in "${!NETWORK_STATUS[@]}"; do
+        if [[ "${NETWORK_STATUS[$net]}" == "FAIL" ]]; then
+            printf "${RED}[✗] %-35s FAIL${RESET}\n" "$net"
+        fi
+    done
+
+    for net in "${!NETWORK_STATUS[@]}"; do
+        if [[ "${NETWORK_STATUS[$net]}" == "OK" ]]; then
+            printf "${GREEN}[✓] %-35s OK${RESET}\n" "$net"
+        fi
+    done
+
+    # exit code
+    if [[ $TOTAL_FAIL -gt 0 ]]; then
+        exit 1
+    else
+        exit 0
+    fi
+}
+
+# -------------------------
+# ARG PARSING
+# -------------------------
+FILE="$DEFAULT_CONFIG"
+declare -a NETWORK_FILTERS=()
+LIST_MODE=0
+
+while getopts "f:n:l" opt; do
+    case "$opt" in
+        f) FILE="$OPTARG" ;;
+        n) NETWORK_FILTERS+=("$OPTARG") ;;
+        l) LIST_MODE=1 ;;
+        *) echo "Usage: $0 [-f file.json] [-n network] [-l]" ; exit 1 ;;
+    esac
+done
+
+# list mode
+if [[ $LIST_MODE -eq 1 ]]; then
+    echo "[ℹ] Available networks:"
+    jq -r '.networks[].network' "$FILE" 2>/dev/null | sort -u
+    exit 0
+fi
+
+# create default config ONLY if using default path
+if [[ "$FILE" == "$DEFAULT_CONFIG" && ! -f "$FILE" ]]; then
+    mkdir -p "$CONFIG_DIR"
+
+    cat > "$FILE" <<EOF
+{
+  "networks": [
+    {
+      "network": "example",
+      "hosts": [
+        { "name": "Cloudflare DNS", "ip": "1.1.1.1", "mode": "critical" }
+      ]
+    }
+  ]
+}
+EOF
+
+    log_info "Created default config at $FILE"
+    exit 0
+fi
+
+# show config source
+if [[ "$FILE" == "$DEFAULT_CONFIG" ]]; then
+    log_info "Using default config: $FILE"
+else
+    log_info "Using custom config: $FILE"
+fi
+
+# -------------------------
+# START
+# -------------------------
+check_json "$FILE" "${NETWORK_FILTERS[@]}"

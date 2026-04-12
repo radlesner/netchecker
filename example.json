@@ -1,0 +1,14 @@
+{
+    "networks": [
+        {
+            "network": "example",
+            "hosts": [
+                {
+                    "name": "Cloudflare DNS",
+                    "ip": "1.1.1.1",
+                    "mode": "critical"
+                }
+            ]
+        }
+    ]
+}
