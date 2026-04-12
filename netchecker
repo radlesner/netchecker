@@ -227,7 +227,7 @@ OPTIONS:
 
     -n <network>     Filter specific network(s)
                      Can be used multiple times:
-                     -n draga.local -n sosny.local
+                     -n foo.local -n xyz.local
 
     -l               List available networks from config
 
