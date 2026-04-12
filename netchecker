@@ -260,7 +260,6 @@ EXIT CODES:
     0   all networks OK
     1   at least one failure detected
 EOF
-exit 0
 }
 
 # -------------------------
@@ -270,12 +269,15 @@ FILE="$DEFAULT_CONFIG"
 declare -a NETWORK_FILTERS=()
 LIST_MODE=0
 
-while getopts "f:n:l:h" opt; do
+while getopts "f:n:lh" opt; do
     case "$opt" in
-        f) FILE="$OPTARG" ;;
+        f)FILE="$OPTARG" ;;
         n) NETWORK_FILTERS+=("$OPTARG") ;;
         l) LIST_MODE=1 ;;
-        h) show_help ;;
+        h)
+            show_help
+            exit 0
+        ;;
         *) echo "Usage: $0 [-f file.json] [-n network] [-l]" ; exit 1 ;;
     esac
 done
