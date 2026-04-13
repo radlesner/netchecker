@@ -258,7 +258,7 @@ EXAMPLES:
     netchecker
     netchecker -f network.json
     netchecker -n foo.local
-    netchecker -f network.json -n foo.local -n xyz.local
+    netchecker -f network.json -n net1.local -n net2.local
     netchecker -l
 
 EXIT CODES:
