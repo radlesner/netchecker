@@ -312,7 +312,6 @@ if [[ "$FILE" == "$DEFAULT_CONFIG" && ! -f "$FILE" ]]; then
 EOF
 
     log_info "Created default config at $FILE"
-    exit 0
 fi
 
 # show config source
