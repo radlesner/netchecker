@@ -227,7 +227,7 @@ OPTIONS:
 
     -n <network>     Filter specific network(s)
                      Can be used multiple times:
-                     -n foo.local -n xyz.local
+                     -n net1.local -n net2.local
 
     -l               List available networks from config
 
@@ -242,7 +242,12 @@ CONFIG FORMAT:
             {
               "name": "Router",
               "ip": "192.168.1.1",
-              "mode": "critical|noncritical"
+              "mode": "noncritical"
+            },
+            {
+              "name": "Host",
+              "ip": "192.168.1.101",
+              "mode": "noncritical"
             }
           ]
         }
