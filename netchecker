@@ -233,7 +233,7 @@ OPTIONS:
 
     -n <network>     Filter specific network(s)
                      Can be used multiple times:
-                     -n net1.local -n net2.local
+                     -n network-01.local -n network-02.local
 
     -l               List available networks from config
 
@@ -279,7 +279,7 @@ EXAMPLES:
     netchecker
     netchecker -f network.json
     netchecker -n foo.local
-    netchecker -f network.json -n net1.local -n net2.local
+    netchecker -f network.json -n network-01.local -n network-02.local
     netchecker -l
 
 EXIT CODES:
